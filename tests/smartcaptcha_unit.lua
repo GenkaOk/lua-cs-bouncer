@@ -80,16 +80,20 @@ package.preload["plugins.crowdsec.template"] = function()
   return { compile = function(tpl, data) return tpl .. "\n--" .. tostring(data.captcha_frontend_js or "") end }
 end
 
-local template_file = "/tmp/crowdsec-smartcaptcha-test-template.html"
-local fh = assert(io.open(template_file, "w"))
-fh:write('<div class="x" data-sitekey="site-key"></div>')
-fh:close()
+package.preload["plugins.crowdsec.template"] = nil -- use the real template module
+
+local template_file = "templates/captcha.html"
 
 package.preload["plugins.crowdsec.utils"] = function()
   return {
     HTTP_CODE = { ["200"] = 200, ok = 200 },
     file_exist = function(path) return path == template_file end,
-    read_file = function() return '<div data-sitekey="site-key"></div>' end,
+    read_file = function(path)
+      local f = assert(io.open(path, "r"))
+      local data = f:read("*a")
+      f:close()
+      return data
+    end,
   }
 end
 
@@ -242,7 +246,7 @@ local TOKEN = "dD0xNjYyNDU3NDMzO2k9MmEwMjo2Yjg6+/==&x=1%zz"
 
 reset()
 new_provider("smartcaptcha")
-queue_response({ status = 200, body = '{"status":"ok","message":"","host":"oxysport.ru"}' })
+queue_response({ status = 200, body = '{"status":"ok","message":"","host":"example.com"}' })
 local valid, err = captcha.Validate(TOKEN, "203.0.113.7")
 eq("smartcaptcha ok -> valid", valid, true)
 eq("smartcaptcha ok -> no error", err, nil)
@@ -355,7 +359,23 @@ check("template gets the SmartCaptcha js",
   tostring(captcha.Template):find("https://smartcaptcha.cloud.yandex.ru/captcha.js", 1, true) ~= nil,
   captcha.Template)
 
-os.remove(template_file)
+-- the widget contract: the container class has to be "smart-captcha", it has to carry
+-- the site key and it has to sit inside the form that gets submitted, otherwise the
+-- hidden smart-token input is not posted back to the bouncer
+local rendered = captcha.Template
+local form_start = rendered:find('<form', 1, true)
+local form_end = rendered:find('</form>', 1, true)
+local container = rendered:find('<div id="captcha" class="smart-captcha"', 1, true)
+check("rendered template has the smart-captcha container", container ~= nil)
+check("the site key is injected into the container",
+  rendered:find('data-sitekey="ysc1_site"', 1, true) ~= nil)
+check("the container is inside the submitted form",
+  form_start ~= nil and form_end ~= nil and container ~= nil
+    and form_start < container and container < form_end)
+check("the callback the widget calls is defined",
+  rendered:find("function captchaCallback", 1, true) ~= nil)
+check("the rendered template has no leftover placeholders",
+  rendered:find("{{", 1, true) == nil)
 
 if failures > 0 then
   io.write(("\n%d check(s) failed\n"):format(failures))

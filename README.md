@@ -47,8 +47,12 @@ populated, which is exactly what the template does for the other providers.
 
 ### Unit tests
 
-The validation logic can be tested without a running OpenResty:
+The validation logic can be tested without a running OpenResty (plain Lua; it stubs
+`ngx`, `resty.http` and `cjson`, and renders the real `templates/captcha.html`):
 
 ```bash
+# run from the root of this repository
 lua tests/smartcaptcha_unit.lua
 ```
+
+Also run in CI by `.github/workflows/smartcaptcha-unit.yml`.
